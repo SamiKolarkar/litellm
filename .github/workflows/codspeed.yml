@@ -55,9 +55,11 @@ jobs:
         with:
           version: "0.10.9"
 
-      - name: Run benchmarks
+      - name: Run benchmarks with CodSpeed
+        if: ${{ secrets.CODSPEED_TOKEN != '' }}
         uses: CodSpeedHQ/action@1c8ae4843586d3ba879736b7f6b7b0c990757fab # v4.12.1
         with:
+          token: ${{ secrets.CODSPEED_TOKEN }}
           mode: simulation
           run: >
             env PYTEST_DISABLE_PLUGIN_AUTOLOAD=1
@@ -70,3 +72,14 @@ jobs:
             -p pytest_codspeed.plugin
             tests/benchmarks/
             --codspeed
+
+      - name: Run benchmarks without CodSpeed
+        if: ${{ secrets.CODSPEED_TOKEN == '' }}
+        run: >
+          env PYTEST_DISABLE_PLUGIN_AUTOLOAD=1
+          uv run --frozen --no-default-groups
+          --with pytest==8.3.5
+          --with "mcp>=1.26.0,<2.0"
+          --with "a2a-sdk>=1.1.0,<2.0"
+          pytest
+          tests/benchmarks/
