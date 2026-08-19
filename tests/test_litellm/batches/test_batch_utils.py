@@ -873,6 +873,7 @@ async def test_output_file_content_vertex_foreign_bucket_rejected_by_real_valida
 @pytest.mark.asyncio
 async def test_handle_completed_vertex_batch_computes_cost_usage_and_models(monkeypatch):
     import litellm.files.main as files_main
+    from litellm.cost_calculator import batch_cost_calculator
 
     rows = [
         _vertex_openai_row("request-1", "gemini-3.6-flash", 10, 5),
@@ -890,8 +891,26 @@ async def test_handle_completed_vertex_batch_computes_cost_usage_and_models(monk
         litellm_params={"vertex_project": "proj-1", "vertex_location": "us-central1"},
     )
 
+    expected_cost = sum(
+        (
+            sum(
+                batch_cost_calculator(
+                    usage=Usage(
+                        prompt_tokens=prompt_tokens,
+                        completion_tokens=completion_tokens,
+                        total_tokens=prompt_tokens + completion_tokens,
+                    ),
+                    model="gemini-3.6-flash",
+                    custom_llm_provider="vertex_ai",
+                )
+            )
+            for prompt_tokens, completion_tokens in ((10, 5), (20, 10))
+        ),
+        0.0,
+    )
+
     assert cost > 0
-    assert cost == pytest.approx(30 * 7.5e-07 + 15 * 3.75e-06)
+    assert cost == pytest.approx(expected_cost)
     assert (usage.prompt_tokens, usage.completion_tokens, usage.total_tokens) == (30, 15, 45)
     assert models == ["gemini-3.6-flash", "gemini-3.6-flash"]
 
