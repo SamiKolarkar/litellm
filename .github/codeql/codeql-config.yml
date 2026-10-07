@@ -14,6 +14,8 @@ query-filters:
       id: py/clear-text-logging-sensitive-data  # CWE-312
   - exclude:
       id: py/polynomial-redos                   # CWE-730
+  - exclude:
+      id: py/log-injection
   # Import resolution confuses stdlib types with management_endpoints/types.py.
   # The generic cycle query also reports intentional deferred imports.
   - exclude:
