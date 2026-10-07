@@ -5,14 +5,10 @@ Integration Tests for Batch Rate Limits
 import asyncio
 import json
 import os
-import sys
 
 import pytest
 from fastapi import HTTPException
 
-sys.path.insert(
-    0, os.path.abspath("../..")
-)  # Adds the parent directory to the system path
 
 import litellm
 from litellm import DualCache
@@ -77,7 +73,7 @@ async def test_batch_rate_limits():
     Integration test for batch rate limits with real OpenAI API calls.
     Tests the full flow: file creation -> token counting -> cleanup
     """
-    litellm._turn_on_debug()
+    litellm.turn_on_debug()
     CUSTOM_LLM_PROVIDER = "openai"
     BATCH_LIMITER = _build_batch_limiter()
 
@@ -916,9 +912,9 @@ async def test_batch_logging_azure_credentials_regression():
     """
     from unittest.mock import AsyncMock, MagicMock, patch
     from litellm.batches.batch_utils import (
-        _extract_file_access_credentials,
+        extract_file_access_credentials,
         _fetch_batch_output_file_content,
-        _handle_completed_batch,
+        handle_completed_batch,
     )
     from litellm.types.llms.openai import Batch, HttpxBinaryResponseContent
     import httpx
@@ -964,7 +960,7 @@ async def test_batch_logging_azure_credentials_regression():
     # Test 1: Verify _extract_file_access_credentials works correctly
     print("\n1. Testing credential extraction...")
 
-    extracted_creds = _extract_file_access_credentials(azure_credentials)
+    extracted_creds = extract_file_access_credentials(azure_credentials)
     assert "api_key" in extracted_creds, "api_key should be extracted"
     assert (
         extracted_creds["api_key"] == "test-azure-key-regression"
@@ -1031,7 +1027,7 @@ async def test_batch_logging_azure_credentials_regression():
     with patch(
         "litellm.files.main.afile_content", side_effect=mock_afile_content_tracker
     ):
-        cost, usage, models = await _handle_completed_batch(
+        result = await handle_completed_batch(
             batch=mock_batch,
             custom_llm_provider="azure",
             litellm_params=azure_credentials,
@@ -1043,13 +1039,13 @@ async def test_batch_logging_azure_credentials_regression():
         ], "REGRESSION: Credentials not passed through _handle_completed_batch"
 
         # Verify cost and usage were calculated
-        assert cost > 0, "Cost should be calculated"
-        assert usage.total_tokens == 40, "Usage should be calculated correctly"
+        assert result.cost > 0, "Cost should be calculated"
+        assert result.usage.total_tokens == 40, "Usage should be calculated correctly"
 
         print("   ✓ Credentials passed through full flow")
-        print(f"   ✓ Cost: {cost}")
-        print(f"   ✓ Usage: {usage.total_tokens} tokens")
-        print(f"   ✓ Models: {models}")
+        print(f"   ✓ Cost: {result.cost}")
+        print(f"   ✓ Usage: {result.usage.total_tokens} tokens")
+        print(f"   ✓ Models: {result.models}")
 
     # Test 4: Verify error prevention
     print("\n4. Testing 'Missing credentials' error prevention...")
@@ -1068,7 +1064,7 @@ async def test_batch_logging_azure_credentials_regression():
             "litellm.files.main.afile_content", side_effect=mock_afile_content_tracker
         ):
             try:
-                cost, usage, models = await _handle_completed_batch(
+                result = await handle_completed_batch(
                     batch=mock_batch,
                     custom_llm_provider="azure",
                     litellm_params=azure_credentials,

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import LoginPage from "./LoginPage";
@@ -99,12 +99,12 @@ describe("LoginPage submit payload", () => {
     renderLoginPage();
     await screen.findByRole("heading", { name: "Login" });
 
-    await user.type(screen.getByLabelText("Username"), "admin");
-    await user.type(screen.getByLabelText("Password"), "sk-1234");
+    fireEvent.change(screen.getByLabelText("Username"), { target: { value: "admin" } });
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "sk-9876" } });
     await user.click(screen.getByRole("button", { name: "Login" }));
 
     await waitFor(() => expect(mockMutate).toHaveBeenCalledTimes(1));
-    expect(mockMutate.mock.calls[0][0]).toStrictEqual({ username: "admin", password: "sk-1234", useV3: false });
+    expect(mockMutate.mock.calls[0][0]).toStrictEqual({ username: "admin", password: "sk-9876", useV3: false });
     expect(switchToWorkerUrl).not.toHaveBeenCalled();
   });
 
@@ -113,11 +113,11 @@ describe("LoginPage submit payload", () => {
     renderLoginPage();
     await screen.findByRole("heading", { name: "Login" });
 
-    await user.type(screen.getByLabelText("Username"), "admin");
-    await user.type(screen.getByLabelText("Password"), "sk-1234{Enter}");
+    fireEvent.change(screen.getByLabelText("Username"), { target: { value: "admin" } });
+    await user.type(screen.getByLabelText("Password"), "sk-9876{Enter}");
 
     await waitFor(() => expect(mockMutate).toHaveBeenCalledTimes(1));
-    expect(mockMutate.mock.calls[0][0]).toStrictEqual({ username: "admin", password: "sk-1234", useV3: false });
+    expect(mockMutate.mock.calls[0][0]).toStrictEqual({ username: "admin", password: "sk-9876", useV3: false });
   });
 
   it("blocks submit and shows both required messages when the fields are empty", async () => {
@@ -154,12 +154,12 @@ describe("LoginPage submit payload", () => {
 
     await user.click(screen.getAllByRole("combobox")[0]);
     await user.click(await screen.findByText("Worker B"));
-    await user.type(screen.getByLabelText("Username"), "admin");
-    await user.type(screen.getByLabelText("Password"), "sk-1234");
+    fireEvent.change(screen.getByLabelText("Username"), { target: { value: "admin" } });
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "sk-9876" } });
     await user.click(screen.getByRole("button", { name: "Login" }));
 
     await waitFor(() => expect(mockMutate).toHaveBeenCalledTimes(1));
-    expect(mockMutate.mock.calls[0][0]).toStrictEqual({ username: "admin", password: "sk-1234", useV3: true });
+    expect(mockMutate.mock.calls[0][0]).toStrictEqual({ username: "admin", password: "sk-9876", useV3: true });
     expect(switchToWorkerUrl).toHaveBeenCalledWith("http://worker-b:4000");
   });
 
@@ -181,12 +181,12 @@ describe("LoginPage submit payload", () => {
     renderLoginPage();
     await screen.findByRole("heading", { name: "Login" });
 
-    await user.type(screen.getByLabelText("Username"), "admin");
-    await user.type(screen.getByLabelText("Password"), "sk-1234");
+    fireEvent.change(screen.getByLabelText("Username"), { target: { value: "admin" } });
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "sk-9876" } });
     await user.click(screen.getByRole("button", { name: "Login" }));
 
     await waitFor(() => expect(mockMutate).toHaveBeenCalledTimes(1));
-    expect(mockMutate.mock.calls[0][0]).toStrictEqual({ username: "admin", password: "sk-1234", useV3: true });
+    expect(mockMutate.mock.calls[0][0]).toStrictEqual({ username: "admin", password: "sk-9876", useV3: true });
     expect(switchToWorkerUrl).toHaveBeenCalledWith("http://worker-a:4000");
   });
 });

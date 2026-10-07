@@ -35,6 +35,7 @@ from litellm.types.utils import ModelResponse
 
 if TYPE_CHECKING:
     from litellm.litellm_core_utils.litellm_logging import Logging as _LiteLLMLoggingObj
+    from litellm.litellm_core_utils.tokenizer import Encoding as Tokenizer
     from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler, HTTPHandler
 
     LiteLLMLoggingObj = _LiteLLMLoggingObj
@@ -215,7 +216,7 @@ class AzureAIAgentsConfig(BaseConfig):
 
             converted_messages.append({"role": role, "content": content})
 
-        payload: Final[dict[str, Any]] = {
+        payload: Final[dict[str, object]] = {
             "agent_id": agent_id,
             "messages": converted_messages,
             "api_version": self._get_api_version(optional_params),
@@ -295,7 +296,7 @@ class AzureAIAgentsConfig(BaseConfig):
         messages: list[AllMessageValues],
         optional_params: dict,
         litellm_params: dict,
-        encoding: Any,
+        encoding: "Tokenizer | None",
         api_key: str | None = None,
         json_mode: bool | None = None,
     ) -> ModelResponse:

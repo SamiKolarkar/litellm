@@ -1,20 +1,24 @@
 /* eslint-disable react/no-unescaped-entities */
 import React from "react";
 import { SimpleTooltip } from "@/components/ui/tooltip";
-import { Select, Divider } from "antd";
-import { InfoCircleOutlined } from "@ant-design/icons";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
 import { CogIcon, BanIcon } from "@heroicons/react/outline";
-import { Eye, EyeOff, Plus, Trash2 } from "lucide-react";
+import { Eye, EyeOff, Info, Plus, Trash2 } from "lucide-react";
 import { callbackInfo, callback_map, mapDisplayToInternalNames } from "../callback_info_helpers";
 import { Logo } from "@/components/molecules/logo/Logo";
 import NumericalInput from "../shared/numerical_input";
 
-const { Option } = Select;
+const CALLBACK_TYPE_ITEMS = [
+  { value: "success", label: "Success Only" },
+  { value: "failure", label: "Failure Only" },
+  { value: "success_and_failure", label: "Success & Failure" },
+];
 
 const CallbackVarInput: React.FC<{
   sensitive: boolean;
@@ -110,6 +114,21 @@ const LoggingSettings: React.FC<LoggingSettingsProps> = ({
         [field]: callbackValue,
         callback_vars: {},
       };
+    } else if (field === "callback_type" && newValue === "failure") {
+      const callbackDisplayName = Object.entries(callback_map).find(
+        ([_, value]) => value === updatedConfigs[index].callback_name,
+      )?.[0];
+      const successOnlyParams = new Set(
+        (callbackDisplayName && callbackInfo[callbackDisplayName]?.success_event_params) || [],
+      );
+      const callbackVars = Object.fromEntries(
+        Object.entries(updatedConfigs[index].callback_vars).filter(([key]) => !successOnlyParams.has(key)),
+      );
+      updatedConfigs[index] = {
+        ...updatedConfigs[index],
+        [field]: newValue,
+        callback_vars: callbackVars,
+      };
     } else {
       updatedConfigs[index] = {
         ...updatedConfigs[index],
@@ -131,6 +150,57 @@ const LoggingSettings: React.FC<LoggingSettingsProps> = ({
     handleChange(updatedConfigs);
   };
 
+  const renderParamControl = (
+    config: LoggingConfig,
+    configIndex: number,
+    paramName: string,
+    param: { type: string; options: readonly string[] },
+  ) => {
+    const { type: paramType, options } = param;
+    const label = paramName.replace(/_/g, " ");
+    if (options.length > 0) {
+      return (
+        <Select
+          items={options.map((option) => ({ label: option, value: option }))}
+          value={config.callback_vars[paramName] || null}
+          onValueChange={(selected: string | null) => updateCallbackVar(configIndex, paramName, selected ?? "")}
+        >
+          <SelectTrigger aria-label={label} className="w-full">
+            <SelectValue placeholder={`Select ${label}`} />
+          </SelectTrigger>
+          <SelectContent>
+            {options.map((option) => (
+              <SelectItem key={option} value={option}>
+                {option}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      );
+    }
+    if (paramType === "number") {
+      return (
+        <NumericalInput
+          step={0.01}
+          width={400}
+          placeholder={`os.environ/${paramName.toUpperCase()}`}
+          value={config.callback_vars[paramName] || ""}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+            updateCallbackVar(configIndex, paramName, e.target.value)
+          }
+        />
+      );
+    }
+    return (
+      <CallbackVarInput
+        sensitive={paramType === "password"}
+        placeholder={`os.environ/${paramName.toUpperCase()}`}
+        value={config.callback_vars[paramName] || ""}
+        onValueChange={(newValue) => updateCallbackVar(configIndex, paramName, newValue)}
+      />
+    );
+  };
+
   const renderDynamicParams = (config: LoggingConfig, configIndex: number) => {
     if (!config.callback_name) return null;
 
@@ -140,6 +210,11 @@ const LoggingSettings: React.FC<LoggingSettingsProps> = ({
     if (!callbackDisplayName) return null;
 
     const dynamicParams = callbackInfo[callbackDisplayName]?.dynamic_params || {};
+    const paramOptions = callbackInfo[callbackDisplayName]?.dynamic_param_options || {};
+    const successOnlyParams =
+      config.callback_type === "failure"
+        ? new Set(callbackInfo[callbackDisplayName]?.success_event_params ?? [])
+        : new Set<string>();
 
     if (Object.keys(dynamicParams).length === 0) return null;
 
@@ -152,34 +227,24 @@ const LoggingSettings: React.FC<LoggingSettingsProps> = ({
           <span className="text-sm font-medium text-foreground">Integration Parameters</span>
         </div>
         <div className="grid grid-cols-1 gap-4">
-          {Object.entries(dynamicParams).map(([paramName, paramType]) => (
-            <div key={paramName} className="space-y-2">
-              <label className="text-sm font-medium text-foreground capitalize flex items-center space-x-1">
-                <span>{paramName.replace(/_/g, " ")}</span>
-                {paramType === "password" && <Badge variant="secondary">Sensitive</Badge>}
-                {paramType === "number" && <Badge variant="secondary">Number</Badge>}
-              </label>
-              {paramType === "number" && (
-                <span className="text-xs text-muted-foreground">Value must be between 0 and 1</span>
-              )}
-              {paramType === "number" ? (
-                <NumericalInput
-                  step={0.01}
-                  width={400}
-                  placeholder={`os.environ/${paramName.toUpperCase()}`}
-                  value={config.callback_vars[paramName] || ""}
-                  onChange={(e: any) => updateCallbackVar(configIndex, paramName, e.target.value)}
-                />
-              ) : (
-                <CallbackVarInput
-                  sensitive={paramType === "password"}
-                  placeholder={`os.environ/${paramName.toUpperCase()}`}
-                  value={config.callback_vars[paramName] || ""}
-                  onValueChange={(newValue) => updateCallbackVar(configIndex, paramName, newValue)}
-                />
-              )}
-            </div>
-          ))}
+          {Object.entries(dynamicParams)
+            .filter(([paramName]) => !successOnlyParams.has(paramName))
+            .map(([paramName, paramType]) => (
+              <div key={paramName} className="space-y-2">
+                <label className="text-sm font-medium text-foreground capitalize flex items-center space-x-1">
+                  <span>{paramName.replace(/_/g, " ")}</span>
+                  {paramType === "password" && <Badge variant="secondary">Sensitive</Badge>}
+                  {paramType === "number" && <Badge variant="secondary">Number</Badge>}
+                </label>
+                {paramType === "number" && (
+                  <span className="text-xs text-muted-foreground">Value must be between 0 and 1</span>
+                )}
+                {renderParamControl(config, configIndex, paramName, {
+                  type: paramType,
+                  options: paramType === "select" ? paramOptions[paramName] || [] : [],
+                })}
+              </div>
+            ))}
         </div>
       </div>
     );
@@ -193,37 +258,37 @@ const LoggingSettings: React.FC<LoggingSettingsProps> = ({
           <BanIcon className="w-5 h-5 text-destructive" />
           <span className="text-base font-semibold text-foreground">Disabled Callbacks</span>
           <SimpleTooltip content="Select callbacks to disable for this key. Disabled callbacks will not receive any logging data.">
-            <InfoCircleOutlined className="text-muted-foreground cursor-help" />
+            <Info className="size-4 text-muted-foreground cursor-help" />
           </SimpleTooltip>
         </div>
 
         <div className="space-y-2">
           <label className="text-sm font-medium text-foreground">Disabled Callbacks</label>
-          <Select
-            mode="multiple"
-            placeholder="Select callbacks to disable"
-            value={disabledCallbacks}
-            onChange={handleDisabledCallbacksChange}
-            style={{ width: "100%" }}
-            optionLabelProp="label"
-          >
-            {allCallbacks.map((callbackName) => {
-              const description = callbackInfo[callbackName]?.description;
-              return (
-                <Option key={callbackName} value={callbackName} label={callbackName}>
-                  <SimpleTooltip content={description} side="right">
-                    <div className="flex items-center space-x-2">
-                      <Logo
-                        src={callbackInfo[callbackName]?.logo}
-                        label={callbackName}
-                        className="w-4 h-4 object-contain"
-                      />
-                      <span>{callbackName}</span>
-                    </div>
-                  </SimpleTooltip>
-                </Option>
-              );
-            })}
+          <Select multiple value={disabledCallbacks} onValueChange={handleDisabledCallbacksChange}>
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="Select callbacks to disable">
+                {(selected: string[]) => (selected.length === 0 ? "Select callbacks to disable" : selected.join(", "))}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {allCallbacks.map((callbackName) => {
+                const description = callbackInfo[callbackName]?.description;
+                return (
+                  <SelectItem key={callbackName} value={callbackName}>
+                    <SimpleTooltip content={description} side="right">
+                      <div className="flex items-center space-x-2">
+                        <Logo
+                          src={callbackInfo[callbackName]?.logo}
+                          label={callbackName}
+                          className="w-4 h-4 object-contain"
+                        />
+                        <span>{callbackName}</span>
+                      </div>
+                    </SimpleTooltip>
+                  </SelectItem>
+                );
+              })}
+            </SelectContent>
           </Select>
           <div className="text-xs text-muted-foreground">
             Select callbacks that should be disabled for this key. These callbacks will not receive any logging data.
@@ -231,7 +296,7 @@ const LoggingSettings: React.FC<LoggingSettingsProps> = ({
         </div>
       </div>
 
-      <Divider />
+      <Separator className="my-6" />
 
       {/* Logging Integrations Section */}
       <div className="flex justify-between items-center">
@@ -239,7 +304,7 @@ const LoggingSettings: React.FC<LoggingSettingsProps> = ({
           <CogIcon className="w-5 h-5 text-foreground" />
           <span className="text-base font-semibold text-foreground">Logging Integrations</span>
           <SimpleTooltip content="Configure callback logging integrations for this team.">
-            <InfoCircleOutlined className="text-muted-foreground cursor-help" />
+            <Info className="size-4 text-muted-foreground cursor-help" />
           </SimpleTooltip>
         </div>
         <Button variant="secondary" onClick={addLoggingConfig} size="sm" type="button">
@@ -274,7 +339,7 @@ const LoggingSettings: React.FC<LoggingSettingsProps> = ({
                   variant="ghost"
                   onClick={() => removeLoggingConfig(index)}
                   size="sm"
-                  className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  className="text-destructive hover:bg-destructive/10 hover:text-destructive/80"
                   type="button"
                 >
                   <Trash2 />
@@ -286,42 +351,55 @@ const LoggingSettings: React.FC<LoggingSettingsProps> = ({
                   <div className="space-y-2">
                     <label className="text-sm font-medium text-foreground">Integration Type</label>
                     <Select
-                      value={callbackDisplayName}
-                      placeholder="Select integration"
-                      onChange={(value) => updateLoggingConfig(index, "callback_name", value)}
-                      className="w-full"
-                      optionLabelProp="label"
+                      value={callbackDisplayName ?? null}
+                      onValueChange={(value: string | null) =>
+                        value && updateLoggingConfig(index, "callback_name", value)
+                      }
                     >
-                      {supportedCallbacks.map((callbackName) => {
-                        const description = callbackInfo[callbackName]?.description;
-                        return (
-                          <Option key={callbackName} value={callbackName} label={callbackName}>
-                            <SimpleTooltip content={description} side="right">
-                              <div className="flex items-center space-x-2">
-                                <Logo
-                                  src={callbackInfo[callbackName]?.logo}
-                                  label={callbackName}
-                                  className="w-4 h-4 object-contain"
-                                />
-                                <span>{callbackName}</span>
-                              </div>
-                            </SimpleTooltip>
-                          </Option>
-                        );
-                      })}
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Select integration" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {supportedCallbacks.map((callbackName) => {
+                          const description = callbackInfo[callbackName]?.description;
+                          return (
+                            <SelectItem key={callbackName} value={callbackName}>
+                              <SimpleTooltip content={description} side="right">
+                                <div className="flex items-center space-x-2">
+                                  <Logo
+                                    src={callbackInfo[callbackName]?.logo}
+                                    label={callbackName}
+                                    className="w-4 h-4 object-contain"
+                                  />
+                                  <span>{callbackName}</span>
+                                </div>
+                              </SimpleTooltip>
+                            </SelectItem>
+                          );
+                        })}
+                      </SelectContent>
                     </Select>
                   </div>
 
                   <div className="space-y-2">
                     <label className="text-sm font-medium text-foreground">Event Type</label>
                     <Select
+                      items={CALLBACK_TYPE_ITEMS}
                       value={config.callback_type}
-                      onChange={(value) => updateLoggingConfig(index, "callback_type", value)}
-                      className="w-full"
+                      onValueChange={(value: string | null) =>
+                        value && updateLoggingConfig(index, "callback_type", value)
+                      }
                     >
-                      <Option value="success">Success Only</Option>
-                      <Option value="failure">Failure Only</Option>
-                      <Option value="success_and_failure">Success &amp; Failure</Option>
+                      <SelectTrigger aria-label="Event Type" className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {CALLBACK_TYPE_ITEMS.map((item) => (
+                          <SelectItem key={item.value} value={item.value}>
+                            {item.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
                     </Select>
                   </div>
                 </div>

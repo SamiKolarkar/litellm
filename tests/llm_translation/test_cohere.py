@@ -1,23 +1,15 @@
-import os
-import sys
 import traceback
 
 from dotenv import load_dotenv
 
 load_dotenv()
 import io
-import os
-
-sys.path.insert(
-    0, os.path.abspath("../..")
-)  # Adds the parent directory to the system path
 import json
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 import litellm
-from litellm import RateLimitError, Timeout, completion, completion_cost, embedding
-from unittest.mock import AsyncMock, patch
 from litellm import RateLimitError, Timeout, completion, completion_cost, embedding
 from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler
 
@@ -113,7 +105,6 @@ def test_completion_cohere_command_r_plus_function_call():
         pytest.fail(f"Error occurred: {e}")
 
 
-# @pytest.mark.skip(reason="flaky test, times out frequently")
 @pytest.mark.flaky(retries=6, delay=1)
 def test_completion_cohere():
     try:
@@ -274,7 +265,7 @@ async def test_cohere_request_body_with_allowed_params():
 
 
 def test_cohere_embedding_outout_dimensions():
-    litellm._turn_on_debug()
+    litellm.turn_on_debug()
     response = embedding(
         model="cohere/embed-v4.0", input="Hello, world!", dimensions=512
     )

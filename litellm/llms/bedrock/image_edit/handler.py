@@ -10,7 +10,6 @@ import json
 from typing import TYPE_CHECKING, Any, Final
 
 import httpx
-from pydantic import BaseModel
 
 import litellm
 from litellm._logging import verbose_logger
@@ -27,9 +26,10 @@ from litellm.llms.custom_httpx.http_handler import (
     _get_httpx_client,
     get_async_httpx_client,
 )
+from litellm.types.llms.base import LiteLLMBaseModel
 from litellm.types.utils import ImageResponse
 
-from ..base_aws_llm import BaseAWSLLM
+from ..base_aws_llm import BaseAWSLLM, bedrock_bearer_token
 from ..common_utils import BedrockError
 
 if TYPE_CHECKING:
@@ -38,7 +38,7 @@ else:
     AWSPreparedRequest = Any
 
 
-class BedrockImageEditPreparedRequest(BaseModel):
+class BedrockImageEditPreparedRequest(LiteLLMBaseModel):
     """
     Internal/Helper class for preparing the request for bedrock image edit
     """
@@ -114,7 +114,12 @@ class BedrockImageEdit(BaseAWSLLM):
             response.raise_for_status()
         except httpx.HTTPStatusError as err:
             error_code: Final = err.response.status_code
-            raise BedrockError(status_code=error_code, message=err.response.text)
+            raise BedrockError(
+                status_code=error_code,
+                message=err.response.text,
+                headers=err.response.headers,
+                response=err.response,
+            )
         except httpx.TimeoutException:
             raise BedrockError(status_code=408, message="Timeout error occurred.")
 
@@ -156,7 +161,12 @@ class BedrockImageEdit(BaseAWSLLM):
             response.raise_for_status()
         except httpx.HTTPStatusError as err:
             error_code: Final = err.response.status_code
-            raise BedrockError(status_code=error_code, message=err.response.text)
+            raise BedrockError(
+                status_code=error_code,
+                message=err.response.text,
+                headers=err.response.headers,
+                response=err.response,
+            )
         except httpx.TimeoutException:
             raise BedrockError(status_code=408, message="Timeout error occurred.")
 
@@ -198,7 +208,9 @@ class BedrockImageEdit(BaseAWSLLM):
         Returns:
             BedrockImageEditPreparedRequest: The prepared request object
         """
-        boto3_credentials_info: Final = self._get_boto_credentials_from_optional_params(optional_params, model)
+        boto3_credentials_info: Final = self._get_boto_credentials_from_optional_params(
+            optional_params, model, bearer_token=bedrock_bearer_token(api_key)
+        )
 
         # Use the existing ARN-aware provider detection method
         bedrock_provider: Final = self.get_bedrock_invoke_provider(model)

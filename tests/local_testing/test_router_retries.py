@@ -3,18 +3,12 @@
 
 import asyncio
 import os
-import sys
 import time
 import traceback
 
-import pytest
-
-sys.path.insert(
-    0, os.path.abspath("../..")
-)  # Adds the parent directory to the system path
-
 import httpx
 import openai
+import pytest
 
 import litellm
 from litellm import Router
@@ -215,49 +209,6 @@ async def test_router_retry_policy(error_type):
         assert customHandler.previous_models == 3
 
 
-@pytest.mark.asyncio
-@pytest.mark.skip(
-    reason="This is a local only test, use this to confirm if retry policy works"
-)
-async def test_router_retry_policy_on_429_errprs():
-    from litellm.router import RetryPolicy
-
-    retry_policy = RetryPolicy(
-        RateLimitErrorRetries=2,
-    )
-    router = Router(
-        model_list=[
-            {
-                "model_name": "gpt-3.5-turbo",  # openai model name
-                "litellm_params": {
-                    "model": "vertex_ai/gemini-1.5-pro-001",
-                },
-            },
-        ],
-        retry_policy=retry_policy,
-        # set_verbose=True,
-        # debug_level="DEBUG",
-        allowed_fails=10,
-    )
-
-    customHandler = MyCustomHandler()
-    litellm.callbacks = [customHandler]
-    try:
-        # litellm.set_verbose = True
-        _one_message = [{"role": "user", "content": "Hello good morning"}]
-
-        messages = [_one_message] * 5
-        print("messages: ", messages)
-        responses = await router.abatch_completion(
-            models=["gpt-3.5-turbo"],
-            messages=messages,
-        )
-        print("responses: ", responses)
-    except Exception as e:
-        print("got an exception", e)
-        pass
-    await asyncio.sleep(0.05)
-    print("customHandler.previous_models: ", customHandler.previous_models)
 
 
 @pytest.mark.parametrize("model_group", ["gpt-3.5-turbo", "bad-model"])
@@ -816,7 +767,7 @@ def test_no_retry_when_no_healthy_deployments():
 
 @pytest.mark.asyncio
 async def test_router_retries_model_specific_and_global():
-    from unittest.mock import patch, MagicMock
+    from unittest.mock import MagicMock, patch
 
     litellm.num_retries = 0
     router = Router(
@@ -851,7 +802,8 @@ async def test_router_retries_model_specific_and_global():
 
 @pytest.mark.asyncio
 async def test_router_timeout_model_specific_and_global():
-    from unittest.mock import patch, MagicMock
+    from unittest.mock import MagicMock, patch
+
     from litellm.llms.custom_httpx.http_handler import HTTPHandler
 
     router = Router(
@@ -927,35 +879,33 @@ async def test_router_retry_num_retries_tracking():
             with patch.object(
                 router, "_time_to_sleep_before_retry", return_value=0.01
             ):  # Fast retries for testing
-                try:
+                with pytest.raises(litellm.RateLimitError) as exc_info:
                     await router.acompletion(
                         model="gpt-3.5-turbo",
                         messages=[{"role": "user", "content": "Hello"}],
                     )
-                    pytest.fail("Expected exception to be raised")
-                except litellm.RateLimitError as e:
-                    # Verify num_retries is correctly set to 3 (not 2, which would be current_attempt)
-                    assert hasattr(
-                        e, "num_retries"
-                    ), "Exception should have num_retries attribute"
-                    assert hasattr(
-                        e, "max_retries"
-                    ), "Exception should have max_retries attribute"
-                    assert (
-                        e.num_retries == 3
-                    ), f"Expected num_retries to be 3, got {e.num_retries}"
-                    assert (
-                        e.max_retries == 3
-                    ), f"Expected max_retries to be 3, got {e.max_retries}"
+                e = exc_info.value
+                assert hasattr(
+                    e, "num_retries"
+                ), "Exception should have num_retries attribute"
+                assert hasattr(
+                    e, "max_retries"
+                ), "Exception should have max_retries attribute"
+                assert (
+                    e.num_retries == 3
+                ), f"Expected num_retries to be 3, got {e.num_retries}"
+                assert (
+                    e.max_retries == 3
+                ), f"Expected max_retries to be 3, got {e.max_retries}"
 
-                    # Verify the error message includes correct retry information
-                    error_str = str(e)
-                    assert (
-                        "LiteLLM Retried: 3 times" in error_str
-                    ), f"Error message should indicate 3 retries: {error_str}"
-                    assert (
-                        "LiteLLM Max Retries: 3" in error_str
-                    ), f"Error message should show max retries: {error_str}"
+                # Verify the error message includes correct retry information
+                error_str = str(e)
+                assert (
+                    "LiteLLM Retried: 3 times" in error_str
+                ), f"Error message should indicate 3 retries: {error_str}"
+                assert (
+                    "LiteLLM Max Retries: 3" in error_str
+                ), f"Error message should show max retries: {error_str}"
 
 
 @pytest.mark.asyncio
@@ -996,17 +946,15 @@ async def test_router_retry_num_retries_single_retry():
             ),
         ):
             with patch.object(router, "_time_to_sleep_before_retry", return_value=0.01):
-                try:
+                with pytest.raises(litellm.Timeout) as exc_info:
                     await router.acompletion(
                         model="gpt-3.5-turbo",
                         messages=[{"role": "user", "content": "Hello"}],
                     )
-                    pytest.fail("Expected exception to be raised")
-                except litellm.Timeout as e:
-                    # With num_retries=1, we should attempt 1 retry
-                    assert (
-                        e.num_retries == 1
-                    ), f"Expected num_retries to be 1, got {e.num_retries}"
-                    assert (
-                        e.max_retries == 1
-                    ), f"Expected max_retries to be 1, got {e.max_retries}"
+                e = exc_info.value
+                assert (
+                    e.num_retries == 1
+                ), f"Expected num_retries to be 1, got {e.num_retries}"
+                assert (
+                    e.max_retries == 1
+                ), f"Expected max_retries to be 1, got {e.max_retries}"

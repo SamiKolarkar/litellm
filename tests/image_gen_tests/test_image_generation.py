@@ -3,30 +3,25 @@
 
 import logging
 import os
-import sys
 import traceback
 from unittest.mock import AsyncMock, MagicMock, patch
 
-
-sys.path.insert(
-    0, os.path.abspath("../..")
-)  # Adds the parent directory to the system path
-
 from dotenv import load_dotenv
 from openai.types.image import Image
+
 from litellm.caching import InMemoryCache
 
 logging.basicConfig(level=logging.DEBUG)
 load_dotenv()
 import asyncio
-import os
+import json
+import logging
+import tempfile
+
 import pytest
+from base_image_generation_test import BaseImageGenTest, TestCustomLogger
 
 import litellm
-import json
-import tempfile
-from base_image_generation_test import BaseImageGenTest, TestCustomLogger
-import logging
 from litellm._logging import verbose_logger
 
 verbose_logger.setLevel(logging.DEBUG)
@@ -105,20 +100,6 @@ def load_vertex_ai_credentials():
     os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = os.path.abspath(temp_file.name)
 
 
-class TestVertexImageGeneration(BaseImageGenTest):
-    def get_base_image_generation_call_args(self) -> dict:
-        # comment this when running locally
-        load_vertex_ai_credentials()
-
-        litellm.in_memory_llm_clients_cache = InMemoryCache()
-        return {
-            "model": "vertex_ai/imagen-3.0-fast-generate-001",
-            "vertex_ai_project": "litellm-ci-cd",
-            "vertex_ai_location": "us-central1",
-            "n": 1,
-        }
-
-
 class TestVertexAIGeminiImageGeneration(BaseImageGenTest):
     """Test Gemini image generation models (Nano Banana)"""
 
@@ -168,10 +149,6 @@ class TestOpenAIGPTImage1(BaseImageGenTest):
         return {"model": "gpt-image-1"}
 
 
-@pytest.mark.skip(reason="Recraft image generation API only tested locally")
-class TestRecraftImageGeneration(BaseImageGenTest):
-    def get_base_image_generation_call_args(self) -> dict:
-        return {"model": "recraft/recraftv3"}
 
 
 class TestAimlImageGeneration(BaseImageGenTest):
@@ -207,7 +184,7 @@ class TestAimlImageGeneration(BaseImageGenTest):
             mock_sync_post.return_value = mock_response
 
             try:
-                litellm._turn_on_debug()
+                litellm.turn_on_debug()
                 custom_logger = TestCustomLogger()
                 litellm.logging_callback_manager._reset_all_callbacks()
                 litellm.callbacks = [custom_logger]
@@ -272,10 +249,6 @@ class TestGoogleImageGen(BaseImageGenTest):
         return {"model": "gemini/gemini-3.1-flash-image"}
 
 
-@pytest.mark.skip(reason="Runwayml image generation API only tested locally")
-class TestRunwaymlImageGeneration(BaseImageGenTest):
-    def get_base_image_generation_call_args(self) -> dict:
-        return {"model": "runwayml/gen4_image"}
 
 
 ## AZURE AI DALL-E 3 is deprecated and new deployments cannot be made
@@ -294,26 +267,6 @@ class TestRunwaymlImageGeneration(BaseImageGenTest):
 #         }
 
 
-@pytest.mark.skip(reason="model EOL")
-@pytest.mark.asyncio
-async def test_aimage_generation_bedrock_with_optional_params():
-    try:
-        litellm.in_memory_llm_clients_cache = InMemoryCache()
-        response = await litellm.aimage_generation(
-            prompt="A cute baby sea otter",
-            model="bedrock/stability.stable-diffusion-xl-v1",
-            size="256x256",
-        )
-        print(f"response: {response}")
-    except litellm.RateLimitError as e:
-        pass
-    except litellm.ContentPolicyViolationError:
-        pass  # Azure randomly raises these errors skip when they occur
-    except Exception as e:
-        if "Your task failed as a result of our safety system." in str(e):
-            pass
-        else:
-            pytest.fail(f"An exception occurred - {str(e)}")
 
 
 @pytest.mark.asyncio
@@ -326,7 +279,8 @@ async def test_aiml_image_generation_with_dynamic_api_key():
     This test validates the fix for ensuring dynamic API keys are respected
     when making image generation requests to the AIML provider.
     """
-    from unittest.mock import AsyncMock, patch, MagicMock
+    from unittest.mock import AsyncMock, MagicMock, patch
+
     import httpx
 
     # Mock AIML response
@@ -393,8 +347,8 @@ async def test_aiml_openai_gpt_image_2_request_uses_openai_param_shape():
     being remapped to the AI/ML flux schema (``image_size``/``num_images``/
     ``output_format``), and hits the correct upstream model name.
     """
-    from unittest.mock import MagicMock, patch
     import json as _json
+    from unittest.mock import MagicMock, patch
 
     mock_aiml_response = {
         "created": 1703658209,
@@ -458,7 +412,7 @@ async def test_azure_image_generation_request_body():
     ) as mock_post:
         mock_post.side_effect = Exception("test")
 
-        with pytest.raises(Exception):
+        with pytest.raises(litellm.APIConnectionError):
             await aimage_generation(
                 model="azure/gpt-image-1",
                 prompt="test prompt",

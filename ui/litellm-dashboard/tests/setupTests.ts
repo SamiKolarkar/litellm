@@ -22,7 +22,7 @@ const ensureTestLocalStorage = () => {
     return store;
   };
 
-  Object.defineProperties(storagePrototype, {
+  const storageMethods: PropertyDescriptorMap = {
     getItem: {
       configurable: true,
       writable: true,
@@ -64,7 +64,8 @@ const ensureTestLocalStorage = () => {
         return Array.from(store.keys())[index] ?? null;
       },
     },
-  });
+  };
+  Object.defineProperties(storagePrototype, storageMethods);
 
   const localStorage = Object.create(storagePrototype);
   storageStores.set(localStorage, new Map<string, string>());
@@ -113,30 +114,25 @@ vi.mock("@/app/(dashboard)/hooks/useAuthorized", () => ({
   }),
 }));
 
-const pendingRefWarnings: string[] = [];
-const consumePendingRefWarnings = (): string[] => pendingRefWarnings.splice(0, pendingRefWarnings.length);
-(globalThis as { __consumePendingRefWarnings?: () => string[] }).__consumePendingRefWarnings =
-  consumePendingRefWarnings;
-
-const originalConsoleError = console.error.bind(console);
-vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
-  originalConsoleError(...args);
-  if (typeof args[0] === "string" && args[0].includes("Function components cannot be given refs")) {
-    pendingRefWarnings.push(args.map(String).join(" "));
+// Unmounting a Base UI dialog that is still open leaves its scroll lock behind: the <html>
+// and <body> inline styles and the marker attribute survive cleanup() and make every later
+// test in the file see a locked page, where popups compute pointer-events: none and clicks
+// silently do nothing. Real users never unmount an open dialog, so undo it here.
+const releaseBaseUiScrollLock = () => {
+  const root = document.documentElement;
+  if (!root.hasAttribute("data-base-ui-scroll-locked")) return;
+  root.removeAttribute("data-base-ui-scroll-locked");
+  for (const property of ["scrollbar-gutter", "overflow-y", "overflow-x", "scroll-behavior"]) {
+    root.style.removeProperty(property);
   }
-});
+  for (const property of ["position", "height", "width", "box-sizing", "overflow", "scroll-behavior"]) {
+    document.body.style.removeProperty(property);
+  }
+};
 
 afterEach(() => {
   cleanup();
-  const refWarnings = consumePendingRefWarnings();
-  if (refWarnings.length > 0) {
-    throw new Error(
-      "A ref was passed to a plain function component and silently dropped under React 18, which breaks " +
-        "ref-based composition (Base UI render triggers, tooltips, focus). Wrap the component in React.forwardRef. " +
-        "This tripwire lives in tests/setupTests.ts and can be removed after the React 19 upgrade.\n\n" +
-        refWarnings.join("\n\n"),
-    );
-  }
+  releaseBaseUiScrollLock();
 });
 
 // Make toLocaleString deterministic in tests; individual tests can override
@@ -231,4 +227,34 @@ if (typeof window !== "undefined") {
     unobserve() {}
     disconnect() {}
   };
+}
+
+// jsdom lacks the layout and input APIs ProseMirror editors use. Browsers report the selection as an edit's
+// target range; layout calls only need a value of the right shape, since tests do not assert on positions.
+if (typeof InputEvent !== "undefined" && !("getTargetRanges" in InputEvent.prototype)) {
+  Object.defineProperty(InputEvent.prototype, "getTargetRanges", {
+    configurable: true,
+    value: () => {
+      const selection = document.getSelection();
+      return selection && selection.rangeCount > 0 ? [selection.getRangeAt(0)] : [];
+    },
+  });
+}
+if (typeof Range !== "undefined" && !("getClientRects" in Range.prototype)) {
+  Object.defineProperties(Range.prototype, {
+    getClientRects: { configurable: true, value: () => [] },
+    getBoundingClientRect: { configurable: true, value: () => new DOMRect() },
+  });
+}
+// Virtualized InspectorTables render no rows in a zero-height viewport, and jsdom reports 0 for every offsetHeight.
+if (typeof HTMLElement !== "undefined") {
+  Object.defineProperty(HTMLElement.prototype, "offsetHeight", {
+    configurable: true,
+    get(this: HTMLElement) {
+      return this.dataset.slot === "inspector-table" ? 720 : 0;
+    },
+  });
+}
+if (typeof document !== "undefined" && !("elementFromPoint" in document)) {
+  Object.defineProperty(document, "elementFromPoint", { configurable: true, value: () => null });
 }

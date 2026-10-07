@@ -2,16 +2,15 @@
 
 import React, { useState, useEffect } from "react";
 import { SimpleTooltip } from "@/components/ui/tooltip";
-import { Button as AntdButton } from "antd";
-import { z } from "zod/v4";
+import { z } from "zod";
 import { fetchUserModels } from "@/components/organisms/create_key_button";
 import { getModelDisplayName } from "@/components/key_team_helpers/fetch_available_models_team_key";
 import { tagInfoCall, tagUpdateCall } from "@/components/networking";
-import { Tag, TagUpdateRequest } from "@/components/tag_management/types";
+import { Tag } from "@/components/tag_management/types";
 import { toast } from "@/lib/toast";
 import NumericalInput from "@/components/shared/numerical_input";
 import BudgetDurationDropdown from "@/components/common_components/budget_duration_dropdown";
-import { FieldGroup } from "@/components/shared/form/field";
+import { FieldGroup } from "@/components/ui/field";
 import { FormField } from "@/components/shared/form/FormField";
 import { MultiSelect } from "@/components/shared/MultiSelect";
 import { Badge } from "@/components/ui/badge";
@@ -28,13 +27,25 @@ const tagEditShape = {
   name: z.string().min(1, "Please input a tag name"),
   description: z.string().optional(),
   models: z.array(z.string()).optional(),
-  max_budget: z.union([z.string(), z.number()]).optional(),
-  budget_duration: z.string().optional(),
+  max_budget: z
+    .union([z.string(), z.number()])
+    .refine(
+      (value) => value === "" || (Number.isFinite(Number(value)) && Number(value) >= 0),
+      "Enter a nonnegative budget",
+    )
+    .optional(),
+  budget_duration: z.string().nullish(),
 };
 
 const tagEditSchema = z.object(tagEditShape);
 
 type TagEditFormValues = z.output<typeof tagEditSchema>;
+
+const budgetPayload = (value: TagEditFormValues["max_budget"]): number | null | undefined => {
+  if (value === undefined) return undefined;
+  if (value === "") return null;
+  return Number(value);
+};
 
 interface TagEditFormProps {
   tag: Tag;
@@ -123,7 +134,7 @@ const TagEditForm: React.FC<TagEditFormProps> = ({ tag, seedBudgetFields, userMo
                 href="https://github.com/BerriAI/litellm/issues/new"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-blue-600 underline hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                className="text-info underline hover:text-info/80"
               >
                 create a GitHub issue
               </a>
@@ -199,8 +210,8 @@ const TagInfoView: React.FC<TagInfoViewProps> = ({ tagId, onClose, accessToken, 
       await tagUpdateCall(accessToken, {
         name: values.name,
         description: values.description,
-        models: values.models as TagUpdateRequest["models"],
-        max_budget: values.max_budget as TagUpdateRequest["max_budget"],
+        models: values.models,
+        max_budget: budgetPayload(values.max_budget),
         tpm_limit: undefined,
         rpm_limit: undefined,
         budget_duration: values.budget_duration,
@@ -230,17 +241,18 @@ const TagInfoView: React.FC<TagInfoViewProps> = ({ tagId, onClose, accessToken, 
             <span className="font-mono px-2 py-1 bg-muted rounded-sm text-sm border border-border">
               {tagDetails.name}
             </span>
-            <AntdButton
-              type="text"
-              size="small"
-              icon={copiedStates["tag-name"] ? <CheckIcon size={12} /> : <CopyIcon size={12} />}
+            <Button
+              variant="ghost"
+              size="icon-xs"
               onClick={() => copyToClipboard(tagDetails.name, "tag-name")}
               className={`transition-all duration-200 ${
                 copiedStates["tag-name"]
-                  ? "text-green-600 bg-green-50 border-green-200 dark:text-green-400 dark:bg-green-950 dark:border-green-800"
+                  ? "text-success bg-success/10 border-success/20"
                   : "text-muted-foreground hover:text-foreground hover:bg-muted"
               }`}
-            />
+            >
+              {copiedStates["tag-name"] ? <CheckIcon size={12} /> : <CopyIcon size={12} />}
+            </Button>
           </div>
           <p className="text-sm text-muted-foreground">{tagDetails.description || "No description"}</p>
         </div>

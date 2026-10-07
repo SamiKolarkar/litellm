@@ -29,6 +29,7 @@ import httpx
 from typing_extensions import ReadOnly
 
 from litellm._logging import verbose_logger
+from litellm.litellm_core_utils.hidden_params import set_hidden_param
 from litellm.litellm_core_utils.url_utils import encode_url_path_segment
 from litellm.llms.azure_ai.agents.transformation import (
     AzureAIAgentsConfig,
@@ -51,15 +52,13 @@ else:
     AsyncHTTPHandler = Any
 
 
-class _AzureRawAnnotation(TypedDict, total=False):
-    type: ReadOnly[str]
+class _AzureRawAnnotation(ChatCompletionAnnotation, total=False):
     text: ReadOnly[str]
     start_index: ReadOnly[int]
     end_index: ReadOnly[int]
-    url_citation: ReadOnly[ChatCompletionAnnotationURLCitation]
 
 
-_TransformedAnnotation: TypeAlias = ChatCompletionAnnotation | _AzureRawAnnotation
+_TransformedAnnotation: TypeAlias = ChatCompletionAnnotation
 
 
 class _AzureText(TypedDict, total=False):
@@ -223,26 +222,17 @@ class AzureAIAgentsHandler:
         """Build the ModelResponse from agent output."""
         from litellm.types.utils import Choices, Message, Usage
 
-        message_kwargs: Final[dict[str, Any]] = {
-            "content": content,
-            "role": "assistant",
-        }
-        if annotations:
-            message_kwargs["annotations"] = annotations
-
         model_response.choices = [
             Choices(
                 finish_reason="stop",
                 index=0,
-                message=Message(**message_kwargs),
+                message=Message(content=content, role="assistant", annotations=annotations or None),
             )
         ]
         model_response.model = model
 
         # Store thread_id for conversation continuity
-        if not hasattr(model_response, "_hidden_params") or model_response._hidden_params is None:
-            model_response._hidden_params = {}
-        model_response._hidden_params["thread_id"] = thread_id
+        set_hidden_param(model_response, "thread_id", thread_id)
 
         # Estimate token usage
         try:
@@ -655,9 +645,6 @@ class AzureAIAgentsHandler:
 
                 if data_str == "[DONE]":
                     # Send final chunk with finish_reason
-                    final_delta_kwargs: dict[str, Any] = {"content": None}
-                    if collected_annotations:
-                        final_delta_kwargs["annotations"] = collected_annotations
                     final_chunk = ModelResponseStream(
                         id=response_id,
                         created=created,
@@ -667,12 +654,12 @@ class AzureAIAgentsHandler:
                             StreamingChoices(
                                 finish_reason="stop",
                                 index=0,
-                                delta=Delta(**final_delta_kwargs),
+                                delta=Delta(content=None, annotations=collected_annotations or None),
                             )
                         ],
                     )
                     if thread_id:
-                        final_chunk._hidden_params = {"thread_id": thread_id}
+                        final_chunk.hidden_params = {"thread_id": thread_id}
                     yield final_chunk
                     return
 
@@ -718,7 +705,7 @@ class AzureAIAgentsHandler:
                                     ],
                                 )
                                 if thread_id:
-                                    chunk._hidden_params = {"thread_id": thread_id}
+                                    chunk.hidden_params = {"thread_id": thread_id}
                                 yield chunk
 
 

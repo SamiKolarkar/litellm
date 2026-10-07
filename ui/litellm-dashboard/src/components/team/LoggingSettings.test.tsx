@@ -181,6 +181,22 @@ describe("LoggingSettings", () => {
     expect(source.match(HARDCODED_PALETTE) ?? []).toHaveLength(0);
   });
 
+  it("keeps the remove button destructive on hover instead of the ghost variant's foreground", () => {
+    const initialValue = [
+      {
+        callback_name: "langsmith",
+        callback_type: "success",
+        callback_vars: {},
+      },
+    ];
+
+    renderWithProviders(<LoggingSettings value={initialValue} onChange={vi.fn()} />);
+
+    const remove = screen.getByRole("button", { name: "Remove" });
+    expect(remove).toHaveClass("hover:text-destructive/80");
+    expect(remove).not.toHaveClass("hover:text-foreground");
+  });
+
   it("reports the chosen event type when a different option is picked", async () => {
     const user = userEvent.setup({ delay: null });
     const mockOnChange = vi.fn();
@@ -194,10 +210,148 @@ describe("LoggingSettings", () => {
 
     renderWithProviders(<LoggingSettings value={initialValue} onChange={mockOnChange} />);
 
-    await user.click(screen.getByTitle("Success Only"));
-    await user.click(await screen.findByTitle("Failure Only"));
+    await user.click(screen.getByRole("combobox", { name: "Event Type" }));
+    await user.click(await screen.findByRole("option", { name: "Failure Only" }));
 
     expect(mockOnChange).toHaveBeenCalledWith([expect.objectContaining({ callback_type: "failure" })]);
+  });
+
+  it("offers the Langfuse OTEL span scope as a pick between full and llm_only rather than free text", async () => {
+    const user = userEvent.setup({ delay: null });
+    const mockOnChange = vi.fn();
+    const initialValue = [
+      {
+        callback_name: "langfuse_otel",
+        callback_type: "success",
+        callback_vars: {},
+      },
+    ];
+
+    renderWithProviders(<LoggingSettings value={initialValue} onChange={mockOnChange} />);
+
+    expect(screen.queryByPlaceholderText("os.environ/LANGFUSE_SPAN_SCOPE")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("combobox", { name: "langfuse span scope" }));
+    expect((await screen.findAllByRole("option")).map((option) => option.textContent)).toEqual(["full", "llm_only"]);
+    await user.click(screen.getByRole("option", { name: "llm_only" }));
+
+    expect(mockOnChange).toHaveBeenCalledWith([
+      expect.objectContaining({ callback_vars: expect.objectContaining({ langfuse_span_scope: "llm_only" }) }),
+    ]);
+  });
+
+  it("offers the Arize OTLP protocol as a pick between grpc and http/protobuf rather than free text", async () => {
+    const user = userEvent.setup({ delay: null });
+    const mockOnChange = vi.fn();
+    const initialValue = [
+      {
+        callback_name: "arize",
+        callback_type: "success",
+        callback_vars: {},
+      },
+    ];
+
+    renderWithProviders(<LoggingSettings value={initialValue} onChange={mockOnChange} />);
+
+    expect(screen.queryByPlaceholderText("os.environ/ARIZE_OTLP_PROTOCOL")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("combobox", { name: "arize otlp protocol" }));
+    expect((await screen.findAllByRole("option")).map((option) => option.textContent)).toEqual([
+      "grpc",
+      "http/protobuf",
+    ]);
+    await user.click(screen.getByRole("option", { name: "http/protobuf" }));
+
+    expect(mockOnChange).toHaveBeenCalledWith([
+      expect.objectContaining({ callback_vars: expect.objectContaining({ arize_otlp_protocol: "http/protobuf" }) }),
+    ]);
+  });
+
+  it("hides the Arize OTLP protocol picker on a failure-only Arize callback", () => {
+    const mockOnChange = vi.fn();
+    const initialValue = [
+      {
+        callback_name: "arize",
+        callback_type: "failure",
+        callback_vars: {},
+      },
+    ];
+
+    renderWithProviders(<LoggingSettings value={initialValue} onChange={mockOnChange} />);
+
+    expect(screen.queryByRole("combobox", { name: "arize otlp protocol" })).not.toBeInTheDocument();
+    expect(screen.getByPlaceholderText("os.environ/ARIZE_API_KEY")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("os.environ/ARIZE_SPACE_ID")).toBeInTheDocument();
+  });
+
+  it("drops the Arize OTLP protocol from callback_vars when the event type switches to failure", async () => {
+    const user = userEvent.setup({ delay: null });
+    const mockOnChange = vi.fn();
+    const initialValue = [
+      {
+        callback_name: "arize",
+        callback_type: "success",
+        callback_vars: { arize_space_id: "s", arize_otlp_protocol: "http/protobuf" },
+      },
+    ];
+
+    renderWithProviders(<LoggingSettings value={initialValue} onChange={mockOnChange} />);
+
+    await user.click(screen.getByRole("combobox", { name: "Event Type" }));
+    await user.click(await screen.findByRole("option", { name: "Failure Only" }));
+
+    const lastCall = mockOnChange.mock.calls[mockOnChange.mock.calls.length - 1];
+    expect(lastCall[0][0].callback_type).toBe("failure");
+    expect(lastCall[0][0].callback_vars).toEqual({ arize_space_id: "s" });
+  });
+
+  it("keeps the Arize OTLP protocol in callback_vars when the event type switches to success_and_failure", async () => {
+    const user = userEvent.setup({ delay: null });
+    const mockOnChange = vi.fn();
+    const initialValue = [
+      {
+        callback_name: "arize",
+        callback_type: "success",
+        callback_vars: { arize_space_id: "s", arize_otlp_protocol: "http/protobuf" },
+      },
+    ];
+
+    renderWithProviders(<LoggingSettings value={initialValue} onChange={mockOnChange} />);
+
+    await user.click(screen.getByRole("combobox", { name: "Event Type" }));
+    await user.click(await screen.findByRole("option", { name: "Success & Failure" }));
+
+    const lastCall = mockOnChange.mock.calls[mockOnChange.mock.calls.length - 1];
+    expect(lastCall[0][0].callback_type).toBe("success_and_failure");
+    expect(lastCall[0][0].callback_vars).toEqual({
+      arize_space_id: "s",
+      arize_otlp_protocol: "http/protobuf",
+    });
+  });
+
+  it("renders sampling rate inputs for the Arize callback and records changes", () => {
+    const mockOnChange = vi.fn();
+
+    const initialValue = [
+      {
+        callback_name: "arize",
+        callback_type: "success",
+        callback_vars: {},
+      },
+    ];
+
+    renderWithProviders(<LoggingSettings value={initialValue} onChange={mockOnChange} />);
+
+    const successInput = screen.getByPlaceholderText("os.environ/ARIZE_SUCCESS_SAMPLING_RATE");
+    const errorInput = screen.getByPlaceholderText("os.environ/ARIZE_ERROR_SAMPLING_RATE");
+    expect(successInput).toBeInTheDocument();
+    expect(errorInput).toBeInTheDocument();
+
+    fireEvent.change(successInput, { target: { value: "0.4" } });
+    let lastCall = mockOnChange.mock.calls[mockOnChange.mock.calls.length - 1];
+    expect(lastCall[0][0].callback_vars.arize_success_sampling_rate).toBe("0.4");
+
+    fireEvent.change(errorInput, { target: { value: "0.9" } });
+    lastCall = mockOnChange.mock.calls[mockOnChange.mock.calls.length - 1];
+    expect(lastCall[0][0].callback_vars.arize_error_sampling_rate).toBe("0.9");
   });
 
   it("correctly handles numerical input with decimal values", () => {
